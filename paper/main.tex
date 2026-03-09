@@ -1,0 +1,327 @@
+\documentclass[review]{elsarticle}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{lineno}
+
+\modulolinenumbers[5]
+
+\journal{Journal of Energy Storage}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{When Does Transfer Learning Help for Battery Life Prediction?\\An Empirical Study on Cross-Condition Knowledge Transfer}
+
+\author[ajou]{Yongjun Kim}
+\ead{yjkim0123@ajou.ac.kr}
+
+\address[ajou]{Department of Software, Ajou University, Suwon 16499, Republic of Korea}
+
+\begin{abstract}
+Accurate battery life prediction is essential for electric vehicle fleet management and second-life applications, yet obtaining sufficient degradation data under every operating condition is prohibitively expensive. Transfer learning (TL) promises to leverage knowledge from existing conditions to improve predictions under new ones, but it remains unclear when TL actually helps versus when it causes negative transfer. This study provides the first systematic empirical analysis of cross-condition TL for battery capacity prediction using 213 lithium-ion cells (Samsung INR21700-50E) aged under 71 distinct conditions spanning three temperatures (23\textdegree C, 35\textdegree C, 45\textdegree C), two aging types (calendar and cyclic), and two experimental stages. We evaluate seven TL methods---target-only, source-only, naive pooling, fine-tuning, instance weighting, CORAL, and TCA---across 14 transfer scenarios. Our results reveal three key findings: (1) TL is \textit{asymmetric}: it significantly improves predictions when targeting 23\textdegree C (up to 49\% MAE reduction, $p < 0.001$) and 35\textdegree C (up to 31\%, $p < 0.05$), but causes negative transfer when targeting 45\textdegree C; (2) the asymmetry stems from a \textit{feature importance shift}---early check-up capacity dominates at 23/35\textdegree C while later check-up capacity dominates at 45\textdegree C, indicating different degradation dynamics; and (3) calendar-to-cyclic transfer \textit{always fails}, confirming that fundamentally different degradation mechanisms cannot be bridged by standard TL. We further provide few-shot analysis showing that TL benefits persist until 10--30 target samples are available, offering practical guidance for experimental design. These findings establish empirical boundaries for when TL can and cannot be trusted in battery applications.
+\end{abstract}
+
+\begin{keyword}
+Transfer learning \sep Battery degradation \sep Lithium-ion battery \sep Capacity prediction \sep Negative transfer \sep Domain adaptation
+\end{keyword}
+
+\end{frontmatter}
+
+\linenumbers
+
+%% ============================================================
+\section{Introduction}
+\label{sec:intro}
+%% ============================================================
+
+Lithium-ion batteries are ubiquitous in electric vehicles (EVs), grid-scale energy storage, and portable electronics, yet their performance degrades over time due to complex electrochemical processes \cite{severson2019data}. Accurate prediction of remaining battery capacity is critical for fleet management, warranty optimization, and second-life applications \cite{birkl2017degradation}. However, battery degradation is highly sensitive to operating conditions---temperature, depth of discharge (DOD), charge/discharge rates (C-rates), and state of charge (SOC)---making it impractical to collect sufficient aging data under every possible condition \cite{stroebl2024multistage}.
+
+Transfer learning (TL) has emerged as a promising approach to address this data scarcity by leveraging degradation knowledge from one condition (source domain) to improve predictions under a different condition (target domain) \cite{pan2010survey}. Several recent studies have applied TL to battery life prediction, reporting improvements in cross-temperature \cite{ye2021cross}, cross-chemistry \cite{ma2022transfer}, and cross-manufacturer \cite{li2023transferable} settings. However, these studies predominantly report \textit{positive} results, leaving a critical question unanswered: \textit{When does TL fail for battery applications?}
+
+Negative transfer---where source domain knowledge \textit{hurts} target performance---is a well-known risk in TL \cite{wang2019characterizing}, yet it remains poorly characterized in the battery domain. Without understanding the boundaries of TL applicability, practitioners risk deploying models that perform worse than simple target-only baselines. This gap is particularly concerning given the safety-critical nature of battery applications.
+
+In this study, we provide the first systematic empirical analysis of cross-condition TL for battery capacity prediction. Using a recently published dataset of 279 Samsung INR21700-50E cells aged under 71 distinct conditions \cite{stroebl2024multistage}, we evaluate seven TL methods across 14 transfer scenarios spanning cross-temperature, cross-stage, and cross-aging-type settings. Our contributions are:
+
+\begin{enumerate}
+    \item \textbf{Asymmetric transfer discovery}: We show that TL effectiveness is strongly direction-dependent---transfer \textit{to} moderate temperatures (23\textdegree C, 35\textdegree C) yields significant improvements (22--49\% MAE reduction), while transfer \textit{to} high temperature (45\textdegree C) consistently causes negative transfer.
+    
+    \item \textbf{Mechanistic explanation}: We trace the asymmetry to a \textit{feature importance shift} across temperature domains---degradation at 23/35\textdegree C is dominated by early check-up capacity, while 45\textdegree C degradation relies on later check-up capacity, indicating fundamentally different degradation dynamics.
+    
+    \item \textbf{Practical guidelines}: Through few-shot analysis and domain distance metrics, we establish quantitative boundaries for when TL should and should not be applied, providing actionable guidance for battery testing and modeling.
+\end{enumerate}
+
+%% ============================================================
+\section{Related Work}
+\label{sec:related}
+%% ============================================================
+
+\subsection{Battery Life Prediction}
+
+Battery capacity prediction has been extensively studied using both physics-based and data-driven approaches. Early work relied on equivalent circuit models and electrochemical models \cite{birkl2017degradation}, but data-driven methods have gained prominence due to their flexibility. Severson et al. \cite{severson2019data} demonstrated that early-cycle features could predict battery lifetime with high accuracy using elastic net regression, establishing a widely adopted benchmark. Attia et al. \cite{attia2020closed} further showed that machine learning could optimize charging protocols through closed-loop experimentation. Subsequent work has employed Gaussian process regression \cite{richardson2017gaussian}, neural networks \cite{zhang2020identifying}, and ensemble methods \cite{roman2021machine} with increasing sophistication. Bills et al. \cite{bills2023universal} recently proposed a universal degradation model, though its transferability across conditions remains limited.
+
+\subsection{Transfer Learning for Battery Applications}
+
+TL has been applied to battery life prediction in several contexts \cite{weiss2016survey}. Tian et al. \cite{tian2020transfer} pioneered TL-based SOH estimation using domain adaptation across different charge protocols. Ye and Yu \cite{ye2021cross} proposed a domain adaptation framework for cross-temperature battery capacity estimation, reporting improvements of 15--30\% over direct prediction. Deng et al. \cite{deng2022battery} combined degradation pattern recognition with TL to achieve robust health estimation across varying operating conditions. Ma et al. \cite{ma2022transfer} demonstrated fine-tuning for cross-chemistry transfer between NMC and LFP cells. Che et al. \cite{che2023transfer} introduced cycle synchronization for TL-based state of health estimation. Li et al. \cite{li2023transferable} developed a transferable feature representation via domain adversarial neural networks for cross-manufacturer prediction. Tan and Zhao \cite{tan2023transfer} applied LSTM-based TL, and Shen et al. \cite{shen2024universal} proposed a universal framework across chemistries. Kim et al. \cite{kim2024battery} recently surveyed TL opportunities for battery applications, noting the lack of systematic negative transfer analysis.
+
+Despite this growing body of work, existing studies share two limitations. First, they predominantly report scenarios where TL works, creating a positive-result bias that obscures the boundaries of TL applicability. Second, they typically evaluate one or two TL methods on a single transfer pair, lacking the systematic comparison needed to understand \textit{why} TL succeeds or fails. Our work addresses both gaps by evaluating seven methods across 14 scenarios.
+
+\subsection{Negative Transfer}
+
+Negative transfer occurs when source domain knowledge degrades target performance compared to learning from target data alone \cite{wang2019characterizing}. Zhang et al. \cite{zhang2023negative} provide a comprehensive survey of negative transfer, identifying distributional divergence and task relatedness as key factors. While well-studied in computer vision and NLP, negative transfer in battery applications has received minimal attention. Zhu et al. \cite{zhu2022data} observed degraded performance when transferring across very different chemistries but did not analyze the underlying causes. We provide the first systematic characterization of negative transfer in battery life prediction, identifying the feature importance shift as the key driver.
+
+%% ============================================================
+\section{Dataset and Experimental Setup}
+\label{sec:setup}
+%% ============================================================
+
+\subsection{Dataset}
+
+We use the Samsung INR21700-50E multi-stage aging dataset published by Str\"obl et al. \cite{stroebl2024multistage}, consisting of 279 lithium-ion cells (nominal capacity: 5.0 Ah) aged under 71 distinct conditions. The dataset includes two aging types:
+
+\begin{itemize}
+    \item \textbf{Calendar aging} (type-k, 132 cells): Cells stored at constant SOC without cycling, at temperatures of 10\textdegree C, 23\textdegree C, and 45\textdegree C.
+    \item \textbf{Cyclic aging} (type-z, 147 cells): Cells subjected to repeated charge-discharge cycles at temperatures of 23\textdegree C, 35\textdegree C, and 45\textdegree C, with varying DOD (0.05--0.60), charge C-rates (0.2--1.0C), and discharge C-rates (0.3--2.0C).
+\end{itemize}
+
+Each cell undergoes periodic capacity check-ups (CUs) at standardized conditions (1C discharge at 23\textdegree C), enabling direct capacity comparison across conditions. The dataset spans two experimental stages with different condition assignments, providing natural domain shift scenarios. After extracting capacity from CU measurements, we obtained usable degradation trajectories for 213 cells (66 calendar, 147 cyclic) with a total of 1,532 check-up measurements.
+
+\subsection{Feature Engineering}
+
+For each cell, we construct an 8-dimensional feature vector comprising:
+\begin{itemize}
+    \item \textbf{Condition features} (4): temperature, DOD, discharge C-rate, maximum SOC
+    \item \textbf{Initial capacity} (1): absolute capacity at first check-up (Ah)
+    \item \textbf{Early degradation features} (3): normalized capacity at check-ups 1--3 (relative to initial capacity)
+\end{itemize}
+
+The prediction target is the normalized capacity retention at check-up 5 (or the final check-up if fewer than 5 are available). This formulation represents a practical scenario: using the first three check-ups to predict medium-term degradation.
+
+\subsection{Transfer Learning Methods}
+
+We evaluate seven methods spanning the TL spectrum:
+
+\begin{enumerate}
+    \item \textbf{Target-only}: Ridge regression trained exclusively on target domain data (leave-one-out cross-validation). This is the baseline that TL must beat.
+    \item \textbf{Source-only}: Gradient boosting trained on source domain, applied directly to target domain without adaptation.
+    \item \textbf{Naive pooling}: Gradient boosting trained on combined source and target data without distinction.
+    \item \textbf{Fine-tuning}: Pre-train on source domain, then correct residuals on target domain using Ridge regression.
+    \item \textbf{Instance weighting}: Re-weight source samples by inverse distance to target centroid, then train on weighted combined data.
+    \item \textbf{CORAL} \cite{sun2016return}: Align source covariance matrix to target covariance before training on combined data.
+    \item \textbf{TCA} \cite{pan2011domain}: Project both domains into a shared subspace using kernel PCA before training.
+\end{enumerate}
+
+All methods use standardized features. Target-domain evaluation uses leave-one-out cross-validation to maximize the use of limited target data.
+
+\subsection{Transfer Scenarios}
+
+We define 14 transfer scenarios:
+\begin{itemize}
+    \item \textbf{Cross-temperature} (6 pairs): All pairwise combinations of 23\textdegree C $\leftrightarrow$ 35\textdegree C $\leftrightarrow$ 45\textdegree C for cyclic aging cells.
+    \item \textbf{Cross-stage} (2 pairs): Stage 1 $\leftrightarrow$ Stage 2 within cyclic aging.
+    \item \textbf{Cross-aging-type} (4 pairs): Calendar $\leftrightarrow$ cyclic at 23\textdegree C and 45\textdegree C.
+    \item \textbf{Leave-one-temperature-out} (2 pairs): Train on two temperatures, test on the third.
+\end{itemize}
+
+\subsection{Evaluation Metrics}
+
+We report mean absolute error (MAE) as the primary metric, with statistical significance assessed via paired Wilcoxon signed-rank tests ($\alpha = 0.05$) comparing per-sample absolute errors between target-only and each TL method.
+
+%% ============================================================
+\section{Results}
+\label{sec:results}
+%% ============================================================
+
+\subsection{Dataset Overview}
+
+Fig.~\ref{fig:trajectories} shows the capacity degradation trajectories for all 213 cells. Calendar aging (top row) exhibits minimal degradation across all temperatures, with capacity retention above 95\% in all cases. Cyclic aging (bottom row) shows substantially more degradation, with clear temperature-dependent patterns: 45\textdegree C cells degrade fastest, while 23\textdegree C cells show the highest inter-cell variability.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig1_trajectories.pdf}
+\caption{Capacity degradation trajectories for 213 Samsung INR21700-50E cells. Top: calendar aging (stored at constant SOC). Bottom: cyclic aging (repeated charge-discharge). The red dashed line indicates 80\% end-of-life threshold.}
+\label{fig:trajectories}
+\end{figure}
+
+Fig.~\ref{fig:mean_curves} summarizes the mean degradation curves for cyclic aging by temperature. The shaded regions indicate $\pm$1 standard deviation, highlighting the substantially higher variability at 23\textdegree C compared to 35\textdegree C and 45\textdegree C.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.7\textwidth]{fig6_mean_curves.pdf}
+\caption{Mean cyclic aging degradation by temperature with $\pm$1 standard deviation bands. The 23\textdegree C condition exhibits the highest inter-cell variability.}
+\label{fig:mean_curves}
+\end{figure}
+
+\subsection{Cross-Temperature Transfer is Asymmetric}
+
+Table~\ref{tab:cross_temp} presents the MAE for all seven methods across six cross-temperature transfer pairs. The most striking finding is the \textit{strong directional asymmetry}: TL methods consistently outperform target-only when the target domain is 23\textdegree C or 35\textdegree C, but consistently underperform when the target is 45\textdegree C.
+
+\begin{table}[htbp]
+\centering
+\caption{Cross-temperature transfer results (MAE in \%). Bold indicates best method per pair; * indicates statistically significant improvement over target-only ($p < 0.05$, Wilcoxon signed-rank test).}
+\label{tab:cross_temp}
+\begin{tabular}{@{}lcccccccc@{}}
+\toprule
+Pair & Target & Source & Naive & Fine-t & IW & CORAL & TCA & Best \\
+\midrule
+23$\to$35\textdegree C & 0.27 & 0.38 & \textbf{0.21}* & 0.35 & 0.25 & 0.22 & 0.25 & Naive \\
+23$\to$45\textdegree C & \textbf{0.19} & 0.62 & 0.29 & 0.36 & 0.28 & 0.26 & 0.49 & Target \\
+35$\to$23\textdegree C & 1.07 & 1.10 & 0.60* & 1.33 & 0.59* & 0.63 & \textbf{0.59}* & TCA \\
+35$\to$45\textdegree C & \textbf{0.19} & 0.62 & 0.30 & 0.71 & 0.27 & 0.26 & 0.48 & Target \\
+45$\to$23\textdegree C & 1.07 & 1.29 & 0.64* & 0.97 & 0.62* & 0.59* & \textbf{0.55}* & TCA \\
+45$\to$35\textdegree C & 0.27 & 0.55 & 0.21* & 0.39 & 0.21* & \textbf{0.19}* & 0.27 & CORAL \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fig.~\ref{fig:heatmap} visualizes the full MAE matrix across all methods and transfer pairs.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig2_heatmap.pdf}
+\caption{MAE (\%) heatmap for all seven methods across six cross-temperature transfer pairs. Bold values indicate best method per pair. Methods consistently fail when targeting 45\textdegree C (right two rows).}
+\label{fig:heatmap}
+\end{figure}
+
+For transfer \textit{to} 23\textdegree C, instance weighting and TCA achieve the largest improvements, reducing MAE by 45--49\% (Wilcoxon $p < 0.001$). For transfer \textit{to} 35\textdegree C, improvements are moderate but significant (22--31\%, $p < 0.05$). In contrast, for transfer \textit{to} 45\textdegree C, all TL methods perform worse than target-only, with no statistically significant differences.
+
+\subsection{Cross-Stage Transfer Always Helps}
+
+Table~\ref{tab:cross_stage} shows that cross-stage transfer is consistently beneficial, with naive pooling achieving the best performance in both directions. This suggests that the two experimental stages share similar degradation dynamics despite different condition assignments.
+
+\begin{table}[htbp]
+\centering
+\caption{Cross-stage transfer results (MAE in \%).}
+\label{tab:cross_stage}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Pair & Target-only & Source-only & Naive & Best \\
+\midrule
+Stage 1$\to$2 & 0.34 & 0.40 & \textbf{0.26} & Naive \\
+Stage 2$\to$1 & 0.97 & 0.66 & \textbf{0.46} & Naive \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Calendar-to-Cyclic Transfer Always Fails}
+
+Cross-aging-type transfer fails in all four scenarios (Table~\ref{tab:cal_cyc}), with target-only consistently outperforming both source-only and naive pooling. This confirms that calendar and cyclic aging involve fundamentally different degradation mechanisms that cannot be bridged by standard TL methods.
+
+\begin{table}[htbp]
+\centering
+\caption{Calendar$\leftrightarrow$cyclic transfer results (MAE in \%).}
+\label{tab:cal_cyc}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Pair & Target-only & Source-only & Naive & Best \\
+\midrule
+Cal$\to$Cyc @23\textdegree C & \textbf{4.11} & 6.85 & 5.98 & Target \\
+Cal$\to$Cyc @45\textdegree C & \textbf{1.14} & 7.84 & 1.33 & Target \\
+Cyc$\to$Cal @23\textdegree C & \textbf{0.04} & 4.33 & 0.83 & Target \\
+Cyc$\to$Cal @45\textdegree C & \textbf{0.31} & 7.64 & 0.76 & Target \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Few-Shot Analysis: When Does TL Stop Helping?}
+
+Fig.~\ref{fig:fewshot} shows how TL effectiveness varies with the number of available target samples. For transfer to 23\textdegree C, TL maintains substantial advantages even with 30 target samples, reflecting the high variability at this temperature. For transfer to 35\textdegree C, TL remains beneficial up to 50 samples. In contrast, for transfer to 45\textdegree C, target-only catches up with as few as 5--10 samples.
+
+This analysis provides practical guidance: \textit{TL is most valuable when the target condition exhibits high inter-cell variability and limited data availability.}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig4_fewshot.pdf}
+\caption{Few-shot transfer learning efficiency across temperature pairs. Error bars indicate standard deviation over 20 random splits. TL maintains advantages for $\to$23\textdegree C transfers even with 30 target samples, while $\to$45\textdegree C transfers show target-only catching up at 5--10 samples.}
+\label{fig:fewshot}
+\end{figure}
+
+\subsection{Feature Importance Shift Explains the Asymmetry}
+
+To understand \textit{why} TL fails for the 45\textdegree C target, we analyze feature importance across temperature domains (Fig.~\ref{fig:feature_importance}). At 23\textdegree C and 35\textdegree C, the first check-up capacity (\texttt{norm\_cu\_1}) dominates with 60--69\% importance, indicating that early degradation patterns are strongly predictive. At 45\textdegree C, however, the \textit{third} check-up capacity (\texttt{norm\_cu\_3}) becomes dominant with 47\% importance, while \texttt{norm\_cu\_1} drops to 14\%.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{fig5_importance.pdf}
+\caption{Feature importance for capacity retention prediction by temperature domain. At 23\textdegree C and 35\textdegree C, the first check-up capacity (CU$_1$) dominates (60--69\%), while at 45\textdegree C, the third check-up (CU$_3$) dominates (47\%), indicating shifted degradation dynamics.}
+\label{fig:feature_importance}
+\end{figure}
+
+This feature importance shift indicates that degradation at 45\textdegree C follows a fundamentally different trajectory---one that cannot be captured by models trained on 23/35\textdegree C data where early capacity is most informative. When source models transfer their ``early capacity matters most'' bias to 45\textdegree C predictions, they produce negative transfer.
+
+\subsection{Domain Distance Correlates with Transfer Direction}
+
+Fig.~\ref{fig:domain_distance} shows the relationship between domain distance (measured by Maximum Mean Discrepancy, MMD) and TL gain. Notably, domain distance alone does not predict TL effectiveness---the 23$\to$35\textdegree C pair has the \textit{highest} MMD (0.787) yet achieves positive transfer (+22\%), while 23$\to$45\textdegree C has lower MMD (0.741) but yields negative transfer ($-$45\%). This confirms that \textit{distributional similarity is insufficient for predicting TL success}; the alignment of feature-target relationships (i.e., which features matter) is the critical factor.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.5\textwidth]{fig3_gain_heatmap.pdf}
+\caption{Transfer learning gain (\%) over target-only baseline. Positive values (green) indicate TL improvement; negative values (red) indicate negative transfer. Transfer \textit{to} 23\textdegree C and 35\textdegree C consistently benefits from TL, while transfer \textit{to} 45\textdegree C suffers negative transfer regardless of source domain.}
+\label{fig:domain_distance}
+\end{figure}
+
+%% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+%% ============================================================
+
+\subsection{Practical Guidelines for Battery TL}
+
+Based on our findings, we propose three practical guidelines:
+
+\begin{enumerate}
+    \item \textbf{Check feature importance alignment before transferring.} If the dominant predictive features differ between source and target conditions, TL is likely to cause negative transfer.
+    \item \textbf{TL is most valuable for conditions with high variability.} The 23\textdegree C domain exhibited the highest inter-cell variability and benefited most from TL, while the more homogeneous 45\textdegree C domain did not.
+    \item \textbf{Never transfer across aging types.} Calendar and cyclic aging involve fundamentally different degradation mechanisms; standard TL methods cannot bridge this gap.
+\end{enumerate}
+
+\subsection{Why 45\textdegree C Is Different}
+
+The feature importance shift at 45\textdegree C likely reflects accelerated degradation kinetics. At high temperatures, SEI (solid electrolyte interphase) growth and lithium plating accelerate nonlinearly \cite{birkl2017degradation}, causing the degradation trajectory to evolve more rapidly. Consequently, later check-ups capture information about the \textit{acceleration phase} that early check-ups miss. At moderate temperatures, degradation is more linear, making early capacity a reliable predictor of future capacity.
+
+\subsection{Limitations}
+
+This study has several limitations. First, we evaluate a single cell chemistry (NMC) and form factor (21700); generalizability to other chemistries (LFP, NCA) requires further investigation. Second, our feature engineering uses only capacity-based features from check-up measurements; incorporating impedance or voltage-curve features may improve TL performance. Third, we evaluate traditional ML methods; deep learning approaches (e.g., LSTM with domain adaptation) may better capture temporal degradation patterns. Fourth, the dataset's two-stage experimental design means that each cell's conditions change between stages, which may confound cross-stage transfer analysis.
+
+%% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%% ============================================================
+
+We presented the first systematic empirical study of cross-condition transfer learning for battery life prediction, evaluating seven methods across 14 scenarios using 213 cells aged under 71 conditions. Our key finding is that \textbf{battery TL is fundamentally asymmetric}: it provides statistically significant improvements (22--44\%) when targeting conditions with high degradation variability (23\textdegree C, 35\textdegree C), but causes negative transfer when targeting conditions with shifted degradation dynamics (45\textdegree C). We traced this asymmetry to a feature importance shift---early capacity dominates at moderate temperatures while later capacity dominates at high temperatures---providing a mechanistic explanation for when and why TL fails.
+
+These findings have immediate practical implications: battery researchers can use feature importance analysis as a pre-screening tool to determine whether TL is safe to apply before committing to expensive experiments. Our few-shot analysis further quantifies the data requirements for different conditions, enabling more efficient experimental design.
+
+Future work should extend this analysis to other chemistries, incorporate richer features (impedance spectroscopy, differential voltage analysis), and develop TL methods specifically designed to handle feature importance shifts in battery degradation.
+
+%% ============================================================
+%% References
+%% ============================================================
+\section*{CRediT authorship contribution statement}
+
+\textbf{Yongjun Kim}: Conceptualization, Methodology, Software, Formal analysis, Investigation, Data curation, Writing -- original draft, Writing -- review \& editing, Visualization.
+
+\section*{Declaration of competing interest}
+
+The author declares no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\section*{Data availability}
+
+The Samsung INR21700-50E aging dataset is publicly available at \url{https://doi.org/10.6084/m9.figshare.25975315.v1}. Analysis code is available at \url{https://github.com/yjkim0123/battery-transfer-learning}.
+
+\section*{Acknowledgements}
+
+This work was supported by Ajou University.
+
+\bibliographystyle{elsarticle-num}
+\bibliography{references}
+
+\end{document}
