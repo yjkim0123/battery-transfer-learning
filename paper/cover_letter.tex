@@ -8,24 +8,24 @@
 
 \begin{document}
 
-\begin{letter}{Editor-in-Chief\\Journal of Power Sources\\Elsevier}
+\begin{letter}{Editor-in-Chief\\Neurocomputing\\Elsevier}
 
 \opening{Dear Editor,}
 
-We are pleased to submit our manuscript entitled ``\textbf{When Does Transfer Learning Help for Battery Life Prediction? A Cautionary Empirical Study on Cross-Condition Knowledge Transfer}'' for consideration as a regular article in the \textit{Journal of Power Sources}.
+We are pleased to submit our manuscript entitled ``\textbf{When Does Transfer Learning Help for Battery Life Prediction? A Cautionary Empirical Study on Cross-Condition Knowledge Transfer}'' for consideration as a regular article in \textit{Neurocomputing}.
 
-Transfer learning (TL) has gained considerable attention in the battery community as a way to leverage degradation data across operating conditions. However, most studies report only positive results, leaving practitioners without guidance on when TL might fail. Our study addresses this gap through the first systematic evaluation of seven TL methods across 14 transfer scenarios using 213 Samsung INR21700-50E cells aged under 71 distinct conditions.
+Transfer learning (TL) is widely applied to address data scarcity in engineering domains, yet negative transfer---where source knowledge hurts target performance---remains poorly understood. Our study provides the first systematic empirical analysis of when and why TL fails, using battery capacity prediction as a rigorous testbed with 213 lithium-ion cells aged under 71 distinct conditions.
 
-Our key findings are:
+Our key findings, relevant to the broader TL and domain adaptation community, are:
 \begin{itemize}
-    \item Within the same cell chemistry, TL provides statistically significant benefit in only one out of six cross-temperature transfer directions (to 23\textdegree C, $p = 0.019$).
-    \item Transfer to high-temperature conditions (45\textdegree C) produces statistically significant \textit{negative} transfer ($p < 0.03$), traced to a feature importance shift across temperature domains.
-    \item Calendar-to-cyclic transfer always fails, confirming that different degradation mechanisms cannot be bridged by standard TL.
+    \item Within-domain TL provides statistically significant benefit in only 1 of 6 transfer directions, challenging the assumption that more data always helps.
+    \item We identify a \textit{feature importance shift} as the mechanistic driver of negative transfer ($p < 0.03$): when predictive features differ between domains, source knowledge becomes counterproductive.
+    \item Target domain uncertainty (inter-cell variability) strongly predicts TL effectiveness ($r = 0.888$, $p = 0.018$), offering a practical pre-screening diagnostic applicable beyond battery applications.
 \end{itemize}
 
-We believe these cautionary findings are timely and relevant for the battery modeling community, providing practical guidelines for when TL should and should not be applied. The manuscript uses a fair comparison protocol with identical base learners for all methods, addressing a common methodological concern in TL benchmarks.
+We believe this work contributes to the understanding of negative transfer and TL applicability, topics of active interest in the machine learning community. The fair comparison protocol (identical base learners for all methods) and the proposed target uncertainty diagnostic address methodological concerns in TL benchmarking.
 
-All data used in this study are publicly available (Figshare DOI: 10.6084/m9.figshare.25975315.v1), and analysis code is available at \url{https://github.com/yjkim0123/battery-transfer-learning}.
+All data are publicly available (Figshare DOI: 10.6084/m9.figshare.25975315.v1), and analysis code is available at \url{https://github.com/yjkim0123/battery-transfer-learning}.
 
 This manuscript has not been published or submitted elsewhere. We have no conflicts of interest to declare.
 
