@@ -1,4 +1,5 @@
 data/raw/
+data/raw
 *.pdf
 *.aux
 *.log
@@ -9,3 +10,17 @@ data/raw/
 __pycache__/
 *.pyc
 .DS_Store
+# LaTeX build artifacts
+*.fdb_latexmk
+*.fls
+*.xdv
+*.toc
+*.spl
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*_backup.tex
+# macOS
+._*
